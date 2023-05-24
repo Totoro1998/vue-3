@@ -26,6 +26,7 @@ const obj = new Proxy(data, {
 });
 
 function track(target, key) {
+  if (!activeEffect) return;
   let effectsMap = bucket.get(target);
   if (!effectsMap) {
     effectsMap = new Map();
@@ -48,7 +49,7 @@ function trigger(target, key) {
   effects && effects.forEach((fn) => fn());
 }
 
-// 注册富作用函数
+// 注册副作用函数
 function registerEffect(fn) {
   activeEffect = fn;
   fn();

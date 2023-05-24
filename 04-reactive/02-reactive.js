@@ -28,7 +28,7 @@ const obj = new Proxy(data, {
   },
 });
 
-// 注册富作用函数
+// 注册副作用函数
 function registerEffect(fn) {
   activeEffect = fn;
   fn();
