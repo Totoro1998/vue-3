@@ -1,17 +1,16 @@
 /**
  * 设计一个完善的响应系统
- * ! 不支持嵌套
- * 我们用全局变量 activeEffect 来存储通过 effect 函数注册的副作用函数，这意味着同一时刻 activeEffect 所存储的副作用函数只能有一个。
- * 当副作用函数发生嵌套时，内层副作用函数的执行会覆盖 activeEffect 的值，并且永远不会恢复到原来的值。
- * 这时如果再有响应式数据进行依赖收集，即使这个响应式数据是在外层副作用函数中读取的，它们收集到的副作用函数也都会是内层副作用函数，这就是问题所在。
+ * ! 计算属性与lazy
  */
 
 // 存储副作用函数的桶
 const bucket = new WeakMap();
 // 用一个全局变量存储被注册的副作用函数
 let activeEffect;
+// 副作用函数栈 effectStack
+const effectStack = [];
 // 原始数据
-const data = { foo: "hello world", bar: true };
+const data = { foo: 1, bar: 2 };
 
 // 对原始数据的代理
 const obj = new Proxy(data, {
@@ -56,23 +55,48 @@ function trigger(target, key) {
   const effectSet = targetMap.get(key);
 
   const effectsToRun = new Set();
-  effectSet && effectSet.forEach((effectFn) => effectsToRun.add(effectFn));
-  effectsToRun.forEach((effectFn) => effectFn());
+  effectSet &&
+    effectSet.forEach((effectFn) => {
+      // 如果 trigger 触发执行的副作用函数与当前正在执行的副作用函数相同，则不触发执行
+      if (effectFn !== activeEffect) {
+        effectsToRun.add(effectFn);
+      }
+    });
+  effectsToRun.forEach((effectFn) => {
+    // 如果一个副作用函数存在调度器，则调用该调度器，并将副作用函数作为参数传递
+    if (effectFn.options.scheduler) {
+      effectFn.options.scheduler(effectFn);
+    } else {
+      effectFn();
+    }
+  });
   //   effectSet && effectSet.forEach((fn) => fn());
 }
 
 // 注册副作用函数
-function registerEffect(fn) {
+function registerEffect(fn, options = {}) {
   const effectFn = () => {
     // 在trigger中每运行一次副作用函数后就调用cleanup进行清除
     // 然后在track中重新添加副作用
     cleanup(effectFn);
     // 当调用 effect 注册副作用函数时，将副作用函数赋值给 activeEffect
     activeEffect = effectFn;
-    fn();
+    // 在调用副作用函数之前将当前副作用函数压入栈中
+    effectStack.push(effectFn);
+    const res = fn();
+    // 在当前副作用函数执行完毕后，将当前副作用函数弹出栈，并把 activeEffect 还原为之前的值
+    effectStack.pop();
+    activeEffect = effectStack[effectStack.length - 1];
+    return res;
   };
+  effectFn.options = options;
   effectFn.effectSets = []; // effectSets用来存储所有包含当前副作用函数的依赖集合
-  effectFn();
+  // 只有非 lazy 的时候，才执行
+  if (!options.lazy) {
+    effectFn();
+  }
+  // 将副作用函数作为返回值返回
+  return effectFn;
 }
 
 function cleanup(effectFn) {
@@ -86,25 +110,33 @@ function cleanup(effectFn) {
   effectFn.effectSets.length = 0;
 }
 
-let temp1, temp2;
-
-registerEffect(function effectFn1() {
-  console.log("effectFn1执行");
-  // temp1 = obj.foo; //! 注意这段代码的位置
-  //effectFn2 的执行先于对字段 obj.foo 的读取操作
-  registerEffect(function effectFn2() {
-    console.log("effectFn2执行");
-    temp2 = obj.bar;
+function computed(getters) {
+  // value 用来缓存上一次计算的值
+  let value;
+  // dirty 标志，用来标识是否需要重新计算值，为 true 则意味着“脏”，需要计算
+  let dirty = true;
+  const effectFn = registerEffect(getters, {
+    lazy: true,
+    scheduler() {
+      if (!dirty) {
+        dirty = true;
+        // 当计算属性依赖的响应式数据变化时，手动调用 trigger 函数触发响应
+        trigger(obj, "value");
+      }
+    },
   });
-  temp1 = obj.foo; //! 注意这段代码的位置
-});
-
-// 在这种情况下，我们希望当修改 obj.foo 时会触发 effectFn1 执行。
-// 由于 effectFn2 嵌套在 effectFn1 里，所以会间接触发 effectFn2 执行.
-// 而当修改 obj.bar 时，只会触发 effectFn2 执行。
-obj.foo = "test";
-
-//01 'effectFn1 执行'
-//02 'effectFn2 执行'
-//03 'effectFn2 执行'
-// !effectFn1并没有重新执行，反而使得 effectFn2 重新执行了
+  const obj = {
+    //只有当读取 value 的值时，才会执行 effectFn 并将其结果作为返回值返回。
+    get value() {
+      // 只有“脏”时才计算值，并将得到的值缓存到 value 中
+      if (dirty) {
+        // 将 dirty 设置为 false，下一次访问直接使用缓存到 value 中的值
+        value = effectFn();
+        dirty = false;
+      }
+      track(obj, "value");
+      return value;
+    },
+  };
+  return obj;
+}

@@ -13,6 +13,7 @@ const data = { text: "hello world" };
 const obj = new Proxy(data, {
   // 拦截读取操作
   get(target, key) {
+    if (!activeEffect) return target[key];
     // 将副作用函数 activeEffect 添加到存储副作用函数的桶中
     let effectsMap = bucket.get(target);
     if (!effectsMap) {

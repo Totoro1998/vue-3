@@ -26,6 +26,7 @@ const obj = new Proxy(data, {
 });
 
 function track(target, key) {
+  console.log("track");
   if (!activeEffect) return;
   let effectsMap = bucket.get(target);
   if (!effectsMap) {
@@ -34,13 +35,14 @@ function track(target, key) {
   }
   let effects = effectsMap.get(key);
   if (!effects) {
-    effects = new Set();
+    effects = new Set(); //使用set会去重
     effectsMap.set(key, effects);
   }
   effects.add(activeEffect);
 }
 
 function trigger(target, key) {
+  console.log("trigger");
   const effectsMap = bucket.get(target);
   if (!effectsMap) {
     return;
@@ -63,6 +65,6 @@ setTimeout(() => {
 }, 1000);
 
 // ! 但如果我们再对这个系统稍加测试，例如在响应式数据 obj 上设置一个不存在的属性时:
-setTimeout(() => {
-  obj.text = "hello Vue3";
-}, 2000);
+// setTimeout(() => {
+//   obj.text = "hello Vue3";
+// }, 2000);

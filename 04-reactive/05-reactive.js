@@ -53,9 +53,7 @@ function trigger(target, key) {
     return;
   }
   const effectSet = targetMap.get(key);
-
-  const effectsToRun = new Set();
-  effectSet && effectSet.forEach((effectFn) => effectsToRun.add(effectFn));
+  const effectsToRun = new Set(effectSet);
   effectsToRun.forEach((effectFn) => effectFn());
   //   effectSet && effectSet.forEach((fn) => fn());
 }
