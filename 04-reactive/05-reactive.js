@@ -53,6 +53,7 @@ function trigger(target, key) {
     return;
   }
   const effectSet = targetMap.get(key);
+  //处理cleanup函数导致的无限执行循环
   const effectsToRun = new Set(effectSet);
   effectsToRun.forEach((effectFn) => effectFn());
   //   effectSet && effectSet.forEach((fn) => fn());

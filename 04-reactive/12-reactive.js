@@ -1,6 +1,6 @@
 /**
  * 设计一个完善的响应系统
- * ! 计算属性与lazy
+ * ! 支持调度执行
  */
 
 // 存储副作用函数的桶
@@ -10,7 +10,7 @@ let activeEffect;
 // 副作用函数栈 effectStack
 const effectStack = [];
 // 原始数据
-const data = { foo: 1, bar: 2 };
+const data = { foo: 1 };
 
 // 对原始数据的代理
 const obj = new Proxy(data, {
@@ -83,20 +83,14 @@ function registerEffect(fn, options = {}) {
     activeEffect = effectFn;
     // 在调用副作用函数之前将当前副作用函数压入栈中
     effectStack.push(effectFn);
-    const res = fn();
+    fn();
     // 在当前副作用函数执行完毕后，将当前副作用函数弹出栈，并把 activeEffect 还原为之前的值
     effectStack.pop();
     activeEffect = effectStack[effectStack.length - 1];
-    return res;
   };
   effectFn.options = options;
   effectFn.effectSets = []; // effectSets用来存储所有包含当前副作用函数的依赖集合
-  // 只有非 lazy 的时候，才执行
-  if (!options.lazy) {
-    effectFn();
-  }
-  // 将副作用函数作为返回值返回
-  return effectFn;
+  effectFn();
 }
 
 function cleanup(effectFn) {
@@ -110,33 +104,6 @@ function cleanup(effectFn) {
   effectFn.effectSets.length = 0;
 }
 
-function computed(getters) {
-  // value 用来缓存上一次计算的值
-  let value;
-  // dirty 标志，用来标识是否需要重新计算值，为 true 则意味着“脏”，需要计算
-  let dirty = true;
-  const effectFn = registerEffect(getters, {
-    lazy: true,
-    scheduler() {
-      if (!dirty) {
-        dirty = true;
-        // 当计算属性依赖的响应式数据变化时，手动调用 trigger 函数触发响应
-        trigger(obj, "value");
-      }
-    },
-  });
-  const obj = {
-    //只有当读取 value 的值时，才会执行 effectFn 并将其结果作为返回值返回。
-    get value() {
-      // 只有“脏”时才计算值，并将得到的值缓存到 value 中
-      if (dirty) {
-        // 将 dirty 设置为 false，下一次访问直接使用缓存到 value 中的值
-        value = effectFn();
-        dirty = false;
-      }
-      track(obj, "value");
-      return value;
-    },
-  };
-  return obj;
-}
+registerEffect(() => {
+  obj.foo++;
+});

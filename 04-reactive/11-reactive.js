@@ -1,6 +1,6 @@
 /**
  * 设计一个完善的响应系统
- * ! 支持调度执行
+ * ! 支持调度执行-修改打印顺序
  */
 
 // 存储副作用函数的桶
@@ -104,6 +104,35 @@ function cleanup(effectFn) {
   effectFn.effectSets.length = 0;
 }
 
-registerEffect(() => {
-  obj.foo++;
-});
+// =========================
+
+const jobQueue = new Set();
+const p = Promise.resolve();
+
+let isFlushing = false;
+function flushJob() {
+  if (isFlushing) return;
+  isFlushing = true;
+  p.then(() => {
+    jobQueue.forEach((job) => job());
+  }).finally(() => {
+    isFlushing = false;
+  });
+}
+
+registerEffect(
+  () => {
+    console.log(obj.foo);
+  },
+  {
+    scheduler(fn) {
+      jobQueue.add(fn);
+      flushJob();
+    },
+  }
+);
+
+obj.foo++;
+obj.foo++;
+obj.foo++;
+obj.foo++;

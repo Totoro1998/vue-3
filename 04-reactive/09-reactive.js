@@ -88,6 +88,7 @@ function registerEffect(fn, options = {}) {
     effectStack.pop();
     activeEffect = effectStack[effectStack.length - 1];
   };
+  // 将 options 挂载到 effectFn 上
   effectFn.options = options;
   effectFn.effectSets = []; // effectSets用来存储所有包含当前副作用函数的依赖集合
   effectFn();

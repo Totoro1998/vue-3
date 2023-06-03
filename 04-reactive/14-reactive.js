@@ -110,40 +110,71 @@ function cleanup(effectFn) {
   effectFn.effectSets.length = 0;
 }
 
-function computed(getters) {
-  // value 用来缓存上一次计算的值
-  let value;
-  // dirty 标志，用来标识是否需要重新计算值，为 true 则意味着“脏”，需要计算
-  let dirty = true;
+function traverse(value, seen = new Set()) {
+  // 如果要读取的数据是原始值，或者已经被读取过了，那么什么都不做
+  if (typeof value !== "object" || value === null || seen.has(val)) return;
+  // 将数据添加到 seen 中，代表遍历地读取过了，避免循环引用引起的死循环
+  seen.add(value);
+  // 暂时不考虑数组等其他结构
+  // 假设 value 就是一个对象，使用 for...in 读取对象的每一个值，并递归地调用 traverse 进行处理
+  for (const k in value) {
+    traverse(value[k], seen);
+  }
+  return value;
+}
 
-  // 把 getter 作为副作⽤函数，创建⼀个 lazy 的 effect
-  // 对于计算属性的getter函数来说，它里面访问的响应式数据只会把computed内部的effectFn收集为依赖
-  // ⽽当把计算属性⽤于另外⼀个 effect 时，就会发⽣ effect 嵌套，外层的 effect 不会被内层 effect 中的响应式数据收集
-  const effectFn = registerEffect(getters, {
-    lazy: true,
-
-    // 使用scheduler重置dirty
-    scheduler() {
-      if (!dirty) {
-        dirty = true;
-        // 当计算属性依赖的响应式数据变化时，手动调用 trigger 函数触发响应
-        trigger(obj, "value");
-      }
-    },
-  });
-  const obj = {
-    //只有当读取 value 的值时，才会执行 effectFn 并将其结果作为返回值返回。
-    get value() {
-      // 只有“脏”时才计算值，并将得到的值缓存到 value 中
-      if (dirty) {
-        // 将 dirty 设置为 false，下一次访问直接使用缓存到 value 中的值
-        value = effectFn();
-        dirty = false;
-      }
-      // 当读取 value 时，⼿动调⽤ track 函数进⾏追踪
-      track(obj, "value");
-      return value;
-    },
+function watch(source, cb, options = {}) {
+  let getter;
+  // 如果 source 是函数，说明用户传递的是 getter，所以直接把 source 赋值给 getter
+  if (typeof source === "function") {
+    getter = source;
+  } else {
+    // 否则按照原来的实现调用 traverse 递归地读取
+    getter = () => traverse(source);
+  }
+  // 定义新值和旧值
+  let oldValue, newValue;
+  // cleanup 用来存储用户注册的过期回调
+  let cleanup;
+  // 定义 onInvalidate 函数
+  function onInvalidate(fn) {
+    // 将过期回调存储到 cleanup 中
+    cleanup = fn;
+  }
+  const job = () => {
+    // 在 scheduler 中重新执⾏副作⽤函数，得到的是新值
+    newValue = effectFn();
+    // 在调用回调函数 cb 之前，先调用过期回调
+    if (cleanup) {
+      cleanup();
+    }
+    // 将 onInvalidate 作为回调函数的第三个参数，以便用户使用
+    cb(newValue, oldValue, onInvalidate);
+    // 更新旧值，不然下⼀次会得到错误的旧值
+    oldValue = newValue;
   };
-  return obj;
+  // 使⽤ effect 注册副作⽤函数时，开启 lazy 选项，并把返回值存储到effectFn 中以便后续⼿动调⽤
+  const effectFn = registerEffect(
+    // 执行getter
+    () => getter(),
+    {
+      lazy: true,
+      scheduler() {
+        // 在调度函数中判断 flush 是否为 'post'，如果是，将其放到微任务队列中执行,从而实现异步延迟执行
+        if (options.flush === "post") {
+          const p = Promise.resolve();
+          p.then(job);
+        } else {
+          job();
+        }
+      },
+    }
+  );
+  if (options.immediate) {
+    // 当 immediate 为 true 时立即执行 job，从而触发回调执行
+    job();
+  } else {
+    // ⼿动调⽤副作⽤函数，拿到的值就是旧值
+    oldValue = effectFn();
+  }
 }
