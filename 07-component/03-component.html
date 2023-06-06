@@ -148,11 +148,6 @@
       // 在这⾥调⽤ created 钩⼦
       created && created.call(state);
 
-      // 调⽤ render 函数时，将其 this 设置为 state，
-      // 从⽽ render 函数内部可以通过 this 访问组件⾃⾝状态数据
-      const subTree = render.call(state, state);
-      // 最后调⽤ patch 函数来挂载组件所描述的内容，即 subTree
-
       effect(
         () => {
           // 调⽤组件的渲染函数，获得⼦树
@@ -528,7 +523,9 @@
       };
     },
     mounted() {
-      console.log("mounted------", this);
+      setTimeout(() => {
+        this.foo = "haha";
+      }, 2000);
     },
   };
   const CompVNode = {

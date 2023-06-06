@@ -121,14 +121,12 @@
       const { render, data } = componentOptions;
       // 调⽤ data 函数得到原始数据，并调⽤ reactive 函数将其包装为响应式数据
       const state = reactive(data());
-      // 调⽤ render 函数时，将其 this 设置为 state，
-      // 从⽽ render 函数内部可以通过 this 访问组件⾃⾝状态数据
-      const subTree = render.call(state, state);
-      // 最后调⽤ patch 函数来挂载组件所描述的内容，即 subTree
-
       effect(
         () => {
+          // 调⽤ render 函数时，将其 this 设置为 state，
+          // 从⽽ render 函数内部可以通过 this 访问组件⾃⾝状态数据
           const subTree = render.call(state, state);
+          // 最后调⽤ patch 函数来挂载组件所描述的内容，即 subTree
           patch(null, subTree, container, anchor);
         },
         {
@@ -430,8 +428,6 @@
         if (nextValue) {
           if (!invoker) {
             invoker = el._vei[key] = (e) => {
-              console.log(e.timeStamp);
-              console.log(invoker.attached);
               if (e.timeStamp < invoker.attached) return;
               if (Array.isArray(invoker.value)) {
                 invoker.value.forEach((fn) => fn(e));

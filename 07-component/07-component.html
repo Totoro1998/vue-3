@@ -197,13 +197,14 @@
           console.error("事件不存在");
         }
       }
-      // setupContext，由于我们还没有讲解lots，所以暂时只需要attrs,emit
-      const setupContext = { attrs, emit, slots };
+
       // 调⽤ setup 函数，将只读版本的 props 作为第⼀个参数传递，避免⽤⼾意外地修改 props 的值，
       // 将 setupContext 作为第⼆个参数传递
       // setupState ⽤来存储由 setup 返回的数据
       let setupState = null;
       if (setup) {
+        // setupContext，由于我们还没有讲解lots，所以暂时只需要attrs,emit
+        const setupContext = { attrs, emit, slots };
         const setupResult = setup(
           shallowReadonly(instance.props),
           setupContext

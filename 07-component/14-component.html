@@ -137,12 +137,12 @@
   }
 
   const {
-    effect,
     reactive,
+    ref,
+    effect,
     shallowReactive,
     shallowReadonly,
     shallowRef,
-    onUmounted,
   } = VueReactivity;
 
   function shouldSetAsProps(el, key, value) {
@@ -183,7 +183,7 @@
       // 检查是否是函数式组件
       const isFunctional = typeof vnode.type === "function";
       // 通过 vnode 获取组件的选项对象，即 vnode.type
-      const componentOptions = vnode.type;
+      let componentOptions = vnode.type;
       if (isFunctional) {
         // 如果是函数式组件，则将 vnode.type 作为渲染函数，将vnode.type.props 作为 props 选项定义即可
         componentOptions = {
@@ -193,10 +193,9 @@
       }
       // 获取组件的渲染函数 render
       // 从组件选项对象中取得组件的⽣命周期函数
-      const {
+      let {
         render,
         data,
-        props: propsOption,
         setup,
         beforeCreate,
         created,
@@ -204,14 +203,18 @@
         mounted,
         beforeUpdate,
         updated,
+        props: propsOption,
       } = componentOptions;
       // 在这⾥调⽤ beforeCreate 钩⼦
       beforeCreate && beforeCreate();
+
       // 调⽤ data 函数得到原始数据，并调⽤ reactive 函数将其包装为响应式数据
       const state = data ? reactive(data()) : null; // 调⽤ resolveProps 函数解析出最终的 props 数据与 attrs 数据
       const [props, attrs] = resolveProps(propsOption, vnode.props);
+
       // 直接使⽤编译好的 vnode.children 对象作为 slots 对象即可
       const slots = vnode.children || {};
+
       // 定义组件实例，⼀个组件实例本质上就是⼀个对象，它包含与组件有关的状态信息
       const instance = {
         // 组件⾃⾝的状态数据，即 data
@@ -228,6 +231,7 @@
         // 在组件实例中添加 mounted 数组，⽤来存储通过 onUnMounted 函数注册的⽣命周期钩⼦函数
         unmounted: [],
       };
+
       // 定义 emit 函数，它接收两个参数
       // event: 事件名称
       // payload: 传递给事件处理函数的参数
@@ -250,14 +254,14 @@
         // setupContext
         const setupContext = { attrs, emit, slots };
         // 在调⽤ setup 函数之前，设置当前组件实例
-        setCurrentInstance(instance);
+        const prevInstance = setCurrentInstance(instance);
         // 调⽤ setup 函数，将只读版本的 props 作为第⼀个参数传递，避免⽤⼾意外地修改 props 的值，将 setupContext 作为第⼆个参数传递
         const setupResult = setup(
           shallowReadonly(instance.props),
           setupContext
         );
         // 在 setup 函数执⾏完毕之后，重置当前组件实例
-        setCurrentInstance(null);
+        setCurrentInstance(prevInstance);
         // 如果 setup 函数的返回值是函数，则将其作为渲染函数
         if (typeof setupResult === "function") {
           // 报告冲突
@@ -275,12 +279,15 @@
       // 将组件实例设置到 vnode 上，⽤于后续更新
       vnode.component = instance;
       // 创建渲染上下⽂对象，本质上是组件实例的代理
+
       const renderContext = new Proxy(instance, {
         get(t, k, r) {
           // 取得组件⾃⾝状态与 props 数据
           const { state, props, slots } = t;
+
           // 当 k 的值为 $slots 时，直接返回组件实例上的 slots
           if (k === "$slots") return slots;
+
           // 先尝试读取⾃⾝状态数据
           if (state && k in state) {
             return state[k];
@@ -319,6 +326,7 @@
           // 调⽤ render 函数时，将其 this 设置为 renderContext
           // 从⽽ render 函数内部可以通过 this 访问组件⾃⾝状态数据
           const subTree = render.call(renderContext, renderContext);
+
           if (!instance.isMounted) {
             // 在这⾥调⽤ beforeMount 钩⼦
             beforeMount && beforeMount.call(renderContext);
@@ -332,17 +340,19 @@
             instance.mounted &&
               instance.mounted.forEach((hook) => hook.call(renderContext));
           } else {
-            // 当 isMounted 为 true 时，说明组件已经被挂载，只需要完成⾃更新即可，
+            // 当 isMounted 为 true 时，说明组件已经被挂载，只需要完成⾃更新即可
+            // 在这⾥调⽤ beforeUpdate 钩⼦
+            beforeUpdate && beforeUpdate.call(renderContext);
+
             // 所以在调⽤ patch 函数时，第⼀个参数为组件上⼀次渲染的⼦树，
             // 意思是，使⽤新的⼦树与上⼀次渲染的⼦树进⾏打补丁操作
             patch(instance.subTree, subTree, container, anchor);
+
+            // 在这⾥调⽤ updated 钩⼦
+            updated && updated.call(renderContext);
           }
-          // 在这⾥调⽤ beforeUpdate 钩⼦
-          beforeUpdate && beforeUpdate.call(renderContext);
           // 更新组件实例的⼦树
           instance.subTree = subTree;
-          // 在这⾥调⽤ updated 钩⼦
-          updated && updated.call(renderContext);
         },
         {
           // 指定该副作⽤函数的调度器为 queueJob 即可
@@ -350,6 +360,7 @@
         }
       );
     }
+    //更新组件
     function patchComponent(n1, n2, anchor) {
       // 获取组件实例，即 n1.component，同时让新的组件虚拟节点 n2.component也指向组件实例
       const instance = (n2.component = n1.component);
@@ -814,7 +825,7 @@
 </script>
 
 <!-- 测试脚本 -->
-<script>
+<!-- <script>
   function MyFuncComp(props) {
     return { type: "h1", children: props.title };
   }
@@ -824,6 +835,74 @@
 
   const CompVNode = {
     type: MyFuncComp,
+    props: {
+      title: "A Big Title",
+    },
+  };
+  renderer.render(CompVNode, document.querySelector("#app"));
+</script> -->
+
+<!-- 测试脚本 -->
+
+<script>
+  const InnerComp = {
+    name: "InnerComp",
+    setup() {
+      return () => ({
+        type: "span",
+        children: "inner",
+      });
+    },
+  };
+
+  let counter = 0;
+  const MyComponent = {
+    name: "MyComponent",
+    props: {
+      title: String,
+    },
+    setup(props, { emit, slots }) {
+      return () => {
+        return {
+          type: "div",
+          children: [
+            {
+              type: defineAsyncComponent({
+                loader: () =>
+                  new Promise((resolve, reject) => {
+                    setTimeout(() => {
+                      counter < 2 ? resolve(InnerComp) : reject("error...");
+                    }, 1000);
+                  }),
+                timeout: 0,
+                errorComponent: {
+                  setup() {
+                    return () => {
+                      return { type: "h2", children: "Error - timeout" };
+                    };
+                  },
+                },
+                delay: 500,
+                loadingComponent: {
+                  setup() {
+                    return () => {
+                      return { type: "h2", children: "Loading..." };
+                    };
+                  },
+                },
+                onError(retry, reject, retires) {
+                  counter = retires;
+                  retry();
+                },
+              }),
+            },
+          ],
+        };
+      };
+    },
+  };
+  const CompVNode = {
+    type: MyComponent,
     props: {
       title: "A Big Title",
     },
