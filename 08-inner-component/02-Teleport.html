@@ -1,4 +1,5 @@
 <div id="app"></div>
+<div id="container"></div>
 
 <script src="https://unpkg.com/@vue/reactivity@3.0.5/dist/reactivity.global.js"></script>
 
@@ -105,7 +106,6 @@
     shallowReadonly,
     shallowRef,
   } = VueReactivity;
-
   const Fragment = Symbol();
 
   let currentInstance = null;
@@ -175,8 +175,9 @@
       let j = 0;
       let oldVNode = oldChildren[j];
       let newVNode = newChildren[j];
+      const min = Math.min(oldChildren.length, newChildren.length);
       // while 循环向后遍历，直到遇到拥有不同 key 值的节点为止
-      while (oldVNode.key === newVNode.key) {
+      while (j < min && oldVNode.key === newVNode.key) {
         // 调用 patch 函数更新
         patch(oldVNode, newVNode, container);
         j++;
@@ -194,7 +195,7 @@
       newVNode = newChildren[newEnd];
 
       // while 循环向前遍历，直到遇到拥有不同 key 值的节点为止
-      while (oldVNode.key === newVNode.key) {
+      while (oldEnd > 0 && newEnd > 0 && oldVNode.key === newVNode.key) {
         // 调用 patch 函数更新
         patch(oldVNode, newVNode, container);
         oldEnd--;
@@ -222,6 +223,7 @@
       } else {
         // 构造 source 数组
         const count = newEnd - j + 1; // 新的一组子节点中剩余未处理节点的数量
+        if (count <= 0) return;
         const source = new Array(count);
         source.fill(-1);
 
@@ -322,7 +324,6 @@
         vnode.children.forEach((c) => unmount(c));
         return;
       } else if (typeof vnode.type === "object") {
-        // 对于需要被 KeepAlive 的组件，我们不应该真的卸载它，⽽应调⽤该组件的⽗组件，即 KeepAlive 组件的 _deActivate 函数使其失活
         if (vnode.shouldKeepAlive) {
           vnode.keepAliveInstance._deActivate(vnode);
         } else {
@@ -366,10 +367,27 @@
         } else {
           patchChildren(n1, n2, container);
         }
+
+        // 组件选项中如果存在 __isTeleport 标识，则它是 Teleport 组件，
+        // 调⽤ Teleport 组件选项中的 process 函数将控制权交接出去
+        // 传递给 process 函数的第五个参数是渲染器的⼀些内部⽅法
+      } else if (typeof type === "object" && type.__isTeleport) {
+        type.process(n1, n2, container, anchor, {
+          patch,
+          patchChildren,
+          // ⽤来移动被 Teleport 的内容,用于相应to值改变并更新
+          move(vnode, container, anchor) {
+            insert(
+              // 移动⼀个组件或者普通元素
+              vnode.component ? vnode.component.subTree.el : vnode.el,
+              container,
+              anchor
+            );
+          },
+        });
       } else if (typeof type === "object" || typeof type === "function") {
         // component
         if (!n1) {
-          // 如果该组件已经被 KeepAlive，则不会重新挂载它，⽽是会调⽤_activate 来激活它
           if (n2.keptAlive) {
             n2.keepAliveInstance._activate(n2, container, anchor);
           } else {
@@ -435,18 +453,13 @@
         subTree: null,
         slots,
         mounted: [],
-        // 只有 KeepAlive 组件的实例下会有 keepAliveCtx 属性
         keepAliveCtx: null,
       };
-      // 检查当前要挂载的组件是否是 KeepAlive 组件
+
       const isKeepAlive = vnode.type.__isKeepAlive;
       if (isKeepAlive) {
-        // 在 KeepAlive 组件实例上添加 keepAliveCtx 对象
-
         instance.keepAliveCtx = {
-          // move 函数⽤来移动⼀段 vnode
           move(vnode, container, anchor) {
-            // 本质上是将组件渲染的内容移动到指定容器中，即隐藏容器中
             insert(vnode.component.subTree.el, container, anchor);
           },
           createElement,
@@ -615,126 +628,70 @@
   });
 </script>
 
-<!-- KeepAlive -->
+<!-- Teleport -->
 <script>
-  // 创建一个缓存对象
-  const cache = new Map();
+  const Teleport = {
+    __isTeleport: true,
+    process(n1, n2, container, anchor, internals) {
+      // 通过 internals 参数取得渲染器的内部⽅法
+      const { patch, patchChildren, move } = internals;
+      if (!n1) {
+        // 如果旧 VNode n1 不存在，则是全新的挂载，否则执⾏更新
 
-  const KeepAlive = {
-    // KeepAlive 组件独有的属性，⽤作标识
-    __isKeepAlive: true,
-    // 定义 include 和 exclude,max
-    props: {
-      include: RegExp,
-      exclude: RegExp,
-      //   max用于缓存管理，可以根据max自定义缓存算法，即cache.set
-      max: Number,
-    },
-    setup(props, { slots }) {
-      // 当前 KeepAlive 组件的实例
-      const instance = currentInstance;
-      // 对于 KeepAlive 组件来说，它的实例上存在特殊的 keepAliveCtx 对象，该对象由渲染器注⼊
-      // 该对象会暴露渲染器的⼀些内部⽅法，其中 move 函数⽤来将⼀段 DOM 移动到另⼀个容器中
-      const { move, createElement } = instance.keepAliveCtx;
-      // 创建隐藏容器
-      const storageContainer = createElement("div");
-      // KeepAlive 组件的实例上会被添加两个内部函数，分别是 _deActivate和 _activate，这两个函数会在渲染器中被调⽤
-
-      // 失活函数
-      instance._deActivate = (vnode) => {
-        move(vnode, storageContainer);
-      };
-      // 激活函数
-      instance._activate = (vnode, container, anchor) => {
-        move(vnode, container, anchor);
-      };
-
-      return () => {
-        // KeepAlive 的默认插槽就是要被 KeepAlive 的组件
-        let rawVNode = slots.default();
-        // 如果不是组件，直接渲染即可，因为⾮组件的虚拟节点⽆法被 KeepAlive
-        if (typeof rawVNode.type !== "object") {
-          return rawVNode;
+        // 获取容器，即挂载点
+        const target =
+          typeof n2.props.to === "string"
+            ? document.querySelector(n2.props.to)
+            : n2.props.to;
+        // 将 n2.children 渲染到指定挂载点即可
+        n2.children.forEach((c) => patch(null, c, target, anchor));
+      } else {
+        // 更新
+        patchChildren(n1, n2, container);
+        // 如果新旧 to 参数的值不同，则需要对内容进⾏移动
+        if (n2.props.to !== n1.props.to) {
+          // 获取新的容器
+          const newTarget =
+            typeof n2.props.to === "string"
+              ? document.querySelector(n2.props.to)
+              : n2.props.to;
+          // 移动到新的容器
+          n2.children.forEach((c) => move(c, newTarget));
         }
-        // 获取“内部组件”的 name
-        const name = rawVNode.type.name;
-        // 对 name 进⾏匹配
-        if (
-          name &&
-          // 如果 name ⽆法被 include 匹配
-          ((props.include && !props.include.test(name)) ||
-            // 或者被 exclude 匹配
-            (props.exclude && props.exclude.test(name)))
-        ) {
-          // 则直接渲染“内部组件”，不对其进⾏后续的缓存操作
-          return rawVNode;
-        }
-        // 在挂载时先获取缓存的组件 vnode
-        const cachedVNode = cache.get(rawVNode.type);
-        if (cachedVNode) {
-          // 如果有缓存的内容，则说明不应该执⾏挂载，⽽应该执⾏激活
-          // 继承组件实例
-          rawVNode.component = cachedVNode.component;
-          // 在 vnode 上添加 keptAlive 属性，标记为 true，避免渲染器重新挂载它
-          rawVNode.keptAlive = true;
-        } else {
-          // 如果没有缓存，则将其添加到缓存中，这样下次激活组件时就不会执⾏新的挂载动作了
-          cache.set(rawVNode.type, rawVNode);
-        }
-        // 在组件 vnode 上添加 shouldKeepAlive 属性，并标记为 true，避免渲染器真的将组件卸载
-        rawVNode.shouldKeepAlive = true;
-        // 将 KeepAlive 组件的实例也添加到 vnode 上，以便在渲染器中访问
-        rawVNode.keepAliveInstance = instance;
-        // 渲染组件 vnode
-        return rawVNode;
-      };
+      }
     },
   };
 </script>
 
-<!-- 测试 -->
 <script>
-  const MyComponent = {
-    name: "MyComponent",
-    props: {
-      title: String,
-    },
-    setup(props, { emit, slots }) {
-      const counter = ref(0);
-
-      return () => {
-        return {
-          type: "button",
-          props: {
-            onClick() {
-              counter.value++;
-            },
-          },
-          children: `count is ${counter.value}`,
-        };
-      };
-    },
-  };
-
   const CompVNode = {
-    type: KeepAlive,
-    // props: {
-    //   exclude: /^My/,
-    // },
-    children: {
-      default() {
-        return { type: MyComponent };
-      },
+    type: Teleport,
+    props: {
+      to: "body",
     },
+    children: [
+      { type: "h1", children: "Header" },
+      { type: "p", children: "content" },
+    ],
   };
-
   renderer.render(CompVNode, document.querySelector("#app"));
 
-  setTimeout(() => {
-    renderer.render(null, document.querySelector("#app"));
-  }, 1000);
+  // setTimeout(() => {
+  //   renderer.render(null, document.querySelector('#app'))
+  // }, 1000);
+
+  const CompVNode2 = {
+    type: Teleport,
+    props: {
+      to: "#container",
+    },
+    children: [
+      { type: "h1", children: "A big Title" },
+      { type: "p", children: "a small content" },
+    ],
+  };
 
   setTimeout(() => {
-    renderer.render(CompVNode, document.querySelector("#app"));
-  }, 2000);
+    renderer.render(CompVNode2, document.querySelector("#app"));
+  }, 1000);
 </script>
