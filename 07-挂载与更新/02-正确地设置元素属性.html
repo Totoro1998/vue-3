@@ -9,11 +9,20 @@
   <body>
     <div id="app"></div>
 
+    <!-- 工具库 -->
+    <script>
+      function shouldSetAsProps(el, key, value) {
+        // 特殊处理
+        if (key === "form" && el.tagName === "INPUT") return false;
+        return key in el;
+      }
+    </script>
+
     <!-- 源码 -->
     <script>
       function createRenderer(options) {
         // 通过 options 得到操作 DOM 的 API
-        const { createElement, insert, setElementText } = options;
+        const { createElement, insert, setElementText, patchProps } = options;
 
         function mountElement(vnode, container) {
           const el = createElement(vnode.type);
@@ -26,12 +35,9 @@
             });
           }
 
-          // 如果 vnode.props 存在才处理它
           if (vnode.props) {
             for (const key in vnode.props) {
-              el.setAttribute(key, vnode.props[key]);
-              // 直接设置
-              //   el[key] = vnode.props[key]
+              patchProps(el, key, null, vnode.props[key]);
             }
           }
 
@@ -79,19 +85,31 @@
         insert(el, parent, anchor = null) {
           parent.insertBefore(el, anchor);
         },
+        // 将属性设置相关操作封装到 patchProps 函数中，并作为渲染器选项传递
+        patchProps(el, key, preValue, nextValue) {
+          if (shouldSetAsProps(el, key, nextValue)) {
+            // 获取该 DOM Properties 的类型
+            const type = typeof el[key];
+            // 如果是布尔类型，并且 value 是空字符串，则将值矫正为 true
+
+            if (type === "boolean" && nextValue === "") {
+              el[key] = true;
+            } else {
+              el[key] = nextValue;
+            }
+          } else {
+            // 如果要设置的属性没有对应的 DOM Properties，则使⽤setAttribute 函数设置属性
+            el.setAttribute(key, nextValue);
+          }
+        },
       });
 
       const vnode = {
-        type: "div",
+        type: "button",
         props: {
-          id: "foo",
+          disabled: "",
         },
-        children: [
-          {
-            type: "p",
-            children: "hello",
-          },
-        ],
+        children: "Button",
       };
       renderer.render(vnode, document.querySelector("#app"));
     </script>
