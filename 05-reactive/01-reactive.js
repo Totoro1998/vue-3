@@ -86,6 +86,8 @@ function cleanup(effectFn) {
   effectFn.effectsSets.length = 0;
 }
 
+// 测试
+
 // 原始数据
 const obj = { foo: 1, bar: 6 };
 const p = new Proxy(obj, {

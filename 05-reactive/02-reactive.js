@@ -1,3 +1,5 @@
+// !处理从原型上继承属性的情况
+
 // 存储副作用函数的桶
 const bucket = new WeakMap();
 // 用于存储for...in循环副作用的key值
@@ -20,6 +22,7 @@ function track(target, key) {
   effectsSet.add(activeEffect);
   activeEffect.effectsSets.push(effectsSet);
 }
+
 function trigger(target, key, type) {
   const targetMap = bucket.get(target);
   if (!targetMap) return;
@@ -104,6 +107,7 @@ function reactive(obj) {
         : "ADD";
       // 设置属性值
       const res = Reflect.set(target, key, newVal, receiver);
+      //​ 如果值没有发⽣变化，则不需要触发响应
       // 将 type 作为第三个参数传递给 trigger 函数
       if (oldVal !== newVal && (oldVal === oldVal || newVal === newVal)) {
         trigger(target, key, type);
@@ -132,28 +136,18 @@ function reactive(obj) {
   });
 }
 
+// 测试
 const obj = {};
 const proto = { bar: 1 };
 
 const child = reactive(obj);
 const parent = reactive(proto);
+// 使⽤ parent 作为 child 的原型
 Object.setPrototypeOf(child, parent);
 
 registerEffect(() => {
   console.log(child.bar);
 });
-
-// console.log(bucket);
-/**
- * 
- * 
-0: {Object => Map(1)}
-  key: {}
-  value: Map(1) {'bar' => Set(1)}
-1: {Object => Map(1)}
-  key: {bar: 1}
-  value: Map(1) {'bar' => Set(1)}
-*/
 
 child.bar = 2;
 // !会打印两次

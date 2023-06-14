@@ -146,6 +146,7 @@ const instrumentations = {
 };
 
 const reactiveMap = new Map();
+
 function reactive(obj) {
   const proxy = createReactive(obj);
 

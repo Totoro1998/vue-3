@@ -1,7 +1,11 @@
+// !处理从原型上继承属性的情况
+
 // 存储副作用函数的桶
 const bucket = new WeakMap();
 // 用于存储for...in循环副作用的key值
 const ITERATE_KEY = Symbol();
+// 用来判断receiver是否是target的代理对象
+const RAW_KEY = Symbol();
 // 用一个全局变量存储当前激活的 effect 函数
 let activeEffect;
 // effect 栈
@@ -90,8 +94,8 @@ function reactive(obj) {
   return new Proxy(obj, {
     // 拦截读取操作
     get(target, key, receiver) {
-      // !代理对象可以通过 raw 属性访问原始数据
-      if (key === "raw") {
+      // !代理对象可以通过 RAW_KEY 属性访问原始数据
+      if (key === RAW_KEY) {
         return target;
       }
       // 将副作用函数 activeEffect 添加到存储副作用函数的桶中
@@ -108,9 +112,9 @@ function reactive(obj) {
         : "ADD";
       // 设置属性值
       const res = Reflect.set(target, key, newVal, receiver);
-      // ! target === receiver.raw 说明 receiver 就是 target 的代理对象
+      // ! target === receiver.RAW_KEY 说明 receiver 就是 target 的代理对象
       //! 访问receiver的属性会走get拦截操作
-      if (target === receiver.raw) {
+      if (target === receiver[RAW_KEY]) {
         // 将 type 作为第三个参数传递给 trigger 函数
         if (oldVal !== newVal && (oldVal === oldVal || newVal === newVal)) {
           trigger(target, key, type);
@@ -141,6 +145,7 @@ function reactive(obj) {
   });
 }
 
+// 测试
 const obj = {};
 const proto = { bar: 1 };
 
@@ -152,18 +157,4 @@ registerEffect(() => {
   console.log(child.bar);
 });
 
-// console.log(bucket);
-/**
- * 
- * 
-0: {Object => Map(1)}
-  key: {}
-  value: Map(1) {'bar' => Set(1)}
-1: {Object => Map(1)}
-  key: {bar: 1}
-  value: Map(1) {'bar' => Set(1)}
-*/
-
 child.bar = 2;
-// !会打印一次
-// 2

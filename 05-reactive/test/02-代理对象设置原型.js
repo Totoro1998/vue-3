@@ -94,10 +94,11 @@ function reactive(obj) {
       track(target, key);
       // 返回属性值
       return Reflect.get(target, key, receiver);
-      //   return Reflect.get(target, key, { bar: 2 });
     },
     // 拦截设置操作
     set(target, key, newVal, receiver) {
+      console.log(target);
+      console.log(receiver);
       const oldVal = target[key];
       // 如果属性不存在，则说明是在添加新的属性，否则是设置已存在的属性
       const type = Object.prototype.hasOwnProperty.call(target, key)
@@ -139,9 +140,12 @@ const proto = { bar: 1 };
 const child = reactive(obj);
 const parent = reactive(proto);
 
-Object.setPrototypeOf(child, parent); //!给代理对象设置原型，本质上是给原始对象设置原型
+Object.setPrototypeOf(child, parent);
 
-console.log(child.bar); //1
-console.log(obj.bar); //1
+child.bar = child.bar + 1;
 
-console.log(Object.getPrototypeOf(obj));
+// console.log(child.bar); //1
+// console.log(obj.bar); //1
+
+// console.log(Object.getPrototypeOf(obj));
+// console.log(Object.getPrototypeOf(child));

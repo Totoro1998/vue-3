@@ -1,13 +1,18 @@
+// !代理数组
 // 存储副作用函数的桶
 const bucket = new WeakMap();
 // 用于存储for...in循环副作用的key值
 const ITERATE_KEY = Symbol();
 // 用一个全局变量存储当前激活的 effect 函数
+// 用来判断receiver是否是target的代理对象
+const RAW_KEY = Symbol();
 let activeEffect;
 // effect 栈
 const effectStack = [];
 // 定义⼀个 Map 实例，存储原始对象到代理对象的映射
 const reactiveMap = new Map();
+// ⼀个标记变量，代表是否进⾏追踪。默认值为 true，即允许追踪
+let shouldTrack = true;
 
 function track(target, key) {
   if (!activeEffect || !shouldTrack) return;
@@ -25,14 +30,17 @@ function track(target, key) {
 function trigger(target, key, type, newVal) {
   const targetMap = bucket.get(target);
   if (!targetMap) return;
+
   const effectsSet = targetMap.get(key);
   const effectsToRun = new Set();
+
   effectsSet &&
     effectsSet.forEach((effectFn) => {
       if (effectFn !== activeEffect) {
         effectsToRun.add(effectFn);
       }
     });
+
   // 如果是添加或删除属性，触发for...in循环副作用
   if (type === "ADD" || type === "DELETE") {
     const iterateEffects = targetMap.get(ITERATE_KEY);
@@ -44,6 +52,7 @@ function trigger(target, key, type, newVal) {
       });
   }
 
+  // 当操作类型为 ADD 并且⽬标对象是数组时，应该取出并执⾏那些与 length属性相关联的副作⽤函数
   if (type === "ADD" && Array.isArray(target)) {
     const lengthEffects = targetMap.get("length");
     lengthEffects &&
@@ -54,9 +63,11 @@ function trigger(target, key, type, newVal) {
       });
   }
 
+  // 如果操作⽬标是数组，并且修改了数组的 length 属性
   if (Array.isArray(target) && key === "length") {
     // 对于索引⼤于或等于新的 length 值的元素
     // 需要把所有相关联的副作⽤函数取出并添加到 effectsToRun 中待执⾏
+    // !需要注意map数据结构的forEach方法的参数值
     targetMap.forEach((effectsSet, key) => {
       if (key >= newVal) {
         effectsSet.forEach((effectFn) => {
@@ -141,15 +152,13 @@ const arrayInstrumentations = {};
     let res = originMethod.apply(this, args);
 
     if (res === false) {
-      // res 为 false 说明没找到，在通过 this.raw 拿到原始数组，再去原始数组中查找，并更新 res 值
-      res = originMethod.apply(this.raw, args);
+      // res 为 false 说明没找到，在通过 this[RAW_KEY] 拿到原始数组，再去原始数组中查找，并更新 res 值
+      res = originMethod.apply(this[RAW_KEY], args);
     }
     // 返回最终的结果
     return res;
   };
 });
-// ⼀个标记变量，代表是否进⾏追踪。默认值为 true，即允许追踪
-let shouldTrack = true;
 // 重写数组的 push、pop、shift等⽅法
 ["push", "pop", "shift", "unshift", "splice"].forEach((method) => {
   // 取得原始 push ⽅法
@@ -158,6 +167,7 @@ let shouldTrack = true;
   arrayInstrumentations[method] = function (...args) {
     // 在调⽤原始⽅法之前，禁⽌追踪
     shouldTrack = false;
+    // push ⽅法的默认⾏为
     let res = originMethod.apply(this, args);
     // 在调⽤原始⽅法之后，恢复原来的⾏为，即允许追踪
     shouldTrack = true;
@@ -169,8 +179,7 @@ function createReactive(obj, isShallow = false, isReadonly = false) {
   return new Proxy(obj, {
     // 拦截读取操作
     get(target, key, receiver) {
-      // !代理对象可以通过 raw 属性访问原始数据
-      if (key === "raw") {
+      if (key === RAW_KEY) {
         return target;
       }
       //  如果操作的⽬标对象是数组，并且 key 存在于arrayInstrumentations 上
@@ -179,6 +188,7 @@ function createReactive(obj, isShallow = false, isReadonly = false) {
         return Reflect.get(arrayInstrumentations, key, receiver);
       }
       // ⾮只读的时候才需要建⽴响应联系
+      // 添加判断，如果 key 的类型是 symbol，则不进⾏追踪
       if (!isReadonly && typeof key !== "symbol") {
         track(target, key);
       }
@@ -218,15 +228,12 @@ function createReactive(obj, isShallow = false, isReadonly = false) {
       }
       // 设置属性值
       const res = Reflect.set(target, key, newVal, receiver);
-      // ! target === receiver.raw 说明 receiver 就是 target 的代理对象
-      //! 访问receiver的属性会走get拦截操作
-      if (target === receiver.raw) {
-        // 将 type 作为第三个参数传递给 trigger 函数
+      if (target === receiver[RAW_KEY]) {
         if (oldVal !== newVal && (oldVal === oldVal || newVal === newVal)) {
+          // 增加第四个参数，即触发响应的新值
           trigger(target, key, type, newVal);
         }
       }
-
       return res;
     },
     // 处理in操作符
@@ -236,6 +243,7 @@ function createReactive(obj, isShallow = false, isReadonly = false) {
     },
     //  处理for...in循环
     ownKeys(target) {
+      // 如果操作⽬标 target 是数组，则使⽤ length 属性作为 key 并建⽴ 响应联系
       track(target, Array.isArray(target) ? "length" : ITERATE_KEY);
       return Reflect.ownKeys(target);
     },
@@ -255,13 +263,38 @@ function createReactive(obj, isShallow = false, isReadonly = false) {
   });
 }
 
+// 测试
 const temp = [1, 4, 5, 6, 7];
-const arr = reactive(temp);
+let arr = reactive(temp);
+
+// registerEffect(() => {
+//   console.log(arr[4]);
+// });
+
+// registerEffect(() => {
+//   for (const key in arr) {
+//     console.log(key);
+//   }
+// });
+// arr[1] = "bar"; //! 不能够触发副作⽤函数重新执⾏
+// arr.length = 1; // 能够触发副作⽤函数重新执⾏
+
+// registerEffect(() => {
+//   for (const val of arr) {
+//     console.log(val);
+//   }
+// });
+// // arr[1] = "bar"; //! 能够触发副作⽤函数重新执⾏
+// arr.length = 1; // 能够触发副作⽤函数重新执⾏
+
+const obj = {};
+arr = reactive([obj]);
 
 registerEffect(() => {
-  console.log(arr[4]);
+  for (const val of arr) {
+    console.log(val + "---------");
+  }
 });
 
-arr.length = 2; //undefined
-
-// arr.length = 10; //不触发
+console.log(arr.includes(obj)); // true
+arr.push(100);
