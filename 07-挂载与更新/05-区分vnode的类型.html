@@ -25,7 +25,8 @@
         const { createElement, insert, setElementText, patchProps } = options;
 
         function mountElement(vnode, container) {
-          const el = createElement(vnode.type);
+          //当我们调⽤ createElement 函数创建真实 DOM 元素时，会把真实 DOM 元素赋值给 vnode.el 属性。
+          const el = (vnode.el = createElement(vnode.type));
           if (typeof vnode.children === "string") {
             setElementText(el, vnode.children);
           } else if (Array.isArray(vnode.children)) {
@@ -45,11 +46,33 @@
           insert(el, container);
         }
 
+        function unmount(vnode) {
+          // 获取 el 的⽗元素
+          const parent = vnode.el.parentNode;
+          if (parent) {
+            parent.removeChild(vnode.el);
+          }
+        }
+
         function patch(oldNode, newNode, container) {
-          if (!oldNode) {
-            mountElement(newNode, container);
-          } else {
-            //
+          // 如果 oldNode 存在，则对⽐ oldNode 和 newNode 的类型
+          if (oldNode && oldNode.type !== newNode.type) {
+            unmount(oldNode);
+            oldNode = null;
+          }
+          // 代码运⾏到这⾥，证明 oldNode 和 newNode 所描述的内容相同
+          const { type } = newNode;
+          // 如果 newNode.type 的值是字符串类型，则它描述的是普通标签元素
+          if (typeof type === "string") {
+            if (!oldNode) {
+              // 挂载
+              mountElement(newNode, container);
+            } else {
+              // 更新
+              patchElement(oldNode, newNode);
+            }
+          } else if (typeof type === "object") {
+            // 组件
           }
         }
 
@@ -60,8 +83,7 @@
           } else {
             if (container._vnode) {
               // 旧 vnode 存在，且新 vnode 不存在，说明是卸载(unmount)操作
-              // 只需要将 container 内的 DOM 清空即可
-              container.innerHTML = "";
+              unmount(container._vnode);
             }
           }
           // 把 vnode 存储到 container._vnode 下，即后续渲染中的旧 vnode
@@ -116,6 +138,7 @@
         children: "text",
       };
       renderer.render(vnode, document.querySelector("#app"));
+      renderer.render(null, document.querySelector("#app"));
     </script>
   </body>
 </html>

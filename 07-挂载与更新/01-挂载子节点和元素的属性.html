@@ -18,9 +18,10 @@
         function mountElement(vnode, container) {
           const el = createElement(vnode.type);
           if (typeof vnode.children === "string") {
+            setElementText(el, vnode.children);
+          } else if (Array.isArray(vnode.children)) {
             // 使⽤Array.isArray 函数判断 vnode.children 是否是数组，如果是
             // 数组，则循环遍历它，并调 patch 函数挂载数组中的虚拟节点。
-          } else if (Array.isArray(vnode.children)) {
             vnode.children.forEach((child) => {
               patch(null, child, el);
             });
