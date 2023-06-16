@@ -61,6 +61,7 @@
         }
 
         function patchElement(oldNode, newNode) {
+          // 新的 vnode 也引⽤了真实 DOM 元素
           const el = (newNode.el = oldNode.el);
           const oldProps = oldNode.props;
           const newProps = newNode.props;
