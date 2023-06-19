@@ -136,26 +136,26 @@
       );
     }
 
-    function patchChildren(n1, n2, container) {
-      if (typeof n2.children === "string") {
-        if (Array.isArray(n1.children)) {
-          n1.children.forEach((c) => unmount(c));
+    function patchChildren(oldNode, newNode, container) {
+      if (typeof newNode.children === "string") {
+        if (Array.isArray(oldNode.children)) {
+          oldNode.children.forEach((c) => unmount(c));
         }
-        setElementText(container, n2.children);
-      } else if (Array.isArray(n2.children)) {
-        patchKeyedChildren(n1, n2, container);
+        setElementText(container, newNode.children);
+      } else if (Array.isArray(newNode.children)) {
+        patchKeyedChildren(oldNode, newNode, container);
       } else {
-        if (Array.isArray(n1.children)) {
-          n1.children.forEach((c) => unmount(c));
-        } else if (typeof n1.children === "string") {
+        if (Array.isArray(oldNode.children)) {
+          oldNode.children.forEach((c) => unmount(c));
+        } else if (typeof oldNode.children === "string") {
           setElementText(container, "");
         }
       }
     }
 
-    function patchKeyedChildren(n1, n2, container) {
-      const newChildren = n2.children;
-      const oldChildren = n1.children;
+    function patchKeyedChildren(oldNode, newNode, container) {
+      const newChildren = newNode.children;
+      const oldChildren = oldNode.children;
       // 处理相同的前缀节点
       // 索引 j 指向新旧两组子节点的开头
       let j = 0;
@@ -313,10 +313,10 @@
       }
     }
 
-    function patchElement(n1, n2) {
-      const el = (n2.el = n1.el);
-      const oldProps = n1.props;
-      const newProps = n2.props;
+    function patchElement(oldNode, newNode) {
+      const el = (newNode.el = oldNode.el);
+      const oldProps = oldNode.props;
+      const newProps = newNode.props;
 
       for (const key in newProps) {
         if (newProps[key] !== oldProps[key]) {
@@ -329,7 +329,7 @@
         }
       }
 
-      patchChildren(n1, n2, el);
+      patchChildren(oldNode, newNode, el);
     }
 
     function unmount(vnode) {
@@ -343,44 +343,44 @@
       }
     }
 
-    function patch(n1, n2, container, anchor) {
-      if (n1 && n1.type !== n2.type) {
-        unmount(n1);
-        n1 = null;
+    function patch(oldNode, newNode, container, anchor) {
+      if (oldNode && oldNode.type !== newNode.type) {
+        unmount(oldNode);
+        oldNode = null;
       }
 
-      const { type } = n2;
+      const { type } = newNode;
 
       if (typeof type === "string") {
-        if (!n1) {
-          mountElement(n2, container, anchor);
+        if (!oldNode) {
+          mountElement(newNode, container, anchor);
         } else {
-          patchElement(n1, n2);
+          patchElement(oldNode, newNode);
         }
       } else if (type === Text) {
-        if (!n1) {
-          const el = (n2.el = createText(n2.children));
+        if (!oldNode) {
+          const el = (newNode.el = createText(newNode.children));
           insert(el, container);
         } else {
-          const el = (n2.el = n1.el);
-          if (n2.children !== n1.children) {
-            setText(el, n2.children);
+          const el = (newNode.el = oldNode.el);
+          if (newNode.children !== oldNode.children) {
+            setText(el, newNode.children);
           }
         }
       } else if (type === Fragment) {
-        if (!n1) {
-          n2.children.forEach((c) => patch(null, c, container));
+        if (!oldNode) {
+          newNode.children.forEach((c) => patch(null, c, container));
         } else {
-          patchChildren(n1, n2, container);
+          patchChildren(oldNode, newNode, container);
         }
       } else if (typeof type === "object") {
         // vnode.type 的值是选项对象，作为组件来处理
-        if (!n1) {
+        if (!oldNode) {
           // 挂载组件
-          mountComponent(n2, container, anchor);
+          mountComponent(newNode, container, anchor);
         } else {
           // 更新组件
-          patchComponent(n1, n2, anchor);
+          patchComponent(oldNode, newNode, anchor);
         }
       }
     }
