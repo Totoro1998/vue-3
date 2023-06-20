@@ -1,0 +1,210 @@
+<!-- 工具库 -->
+<script>
+  function dump(node, indent = 0) {
+    // 节点的类型
+    const type = node.type;
+    // 节点的描述，如果是根节点，则没有描述
+    // 如果是 Element 类型的节点，则使⽤ node.tag 作为节点的描述
+    // 如果是 Text 类型的节点，则使⽤ node.content 作为节点的描述
+    const desc =
+      node.type === "Root"
+        ? ""
+        : node.type === "Element"
+        ? node.tag
+        : node.content;
+    // 打印节点的类型和描述信息
+    console.log(`${"-".repeat(indent)}${type}: ${desc}`);
+    // 递归地打印⼦节点
+    if (node.children) {
+      node.children.forEach((n) => dump(n, indent + 2));
+    }
+  }
+
+  function isAlpha(char) {
+    return (char >= "a" && char <= "z") || (char >= "A" && char <= "Z");
+  }
+</script>
+
+<!-- 源码 -->
+<script>
+  const State = {
+    initial: 1,
+    tagOpen: 2,
+    tagName: 3,
+    text: 4,
+    tagEnd: 5,
+    tagEndName: 6,
+  };
+  function tokenize(str) {
+    let currentState = State.initial;
+    const chars = [];
+    const tokens = [];
+    while (str) {
+      const char = str[0];
+      switch (currentState) {
+        case State.initial:
+          if (char === "<") {
+            currentState = State.tagOpen;
+            str = str.slice(1);
+          } else if (isAlpha(char)) {
+            currentState = State.text;
+            chars.push(char);
+            str = str.slice(1);
+          }
+          break;
+        case State.tagOpen:
+          if (isAlpha(char)) {
+            currentState = State.tagName;
+            chars.push(char);
+            str = str.slice(1);
+          } else if (char === "/") {
+            currentState = State.tagEnd;
+            str = str.slice(1);
+          }
+          break;
+        case State.tagName:
+          if (isAlpha(char)) {
+            chars.push(char);
+            str = str.slice(1);
+          } else if (char === ">") {
+            currentState = State.initial;
+            tokens.push({
+              type: "tag",
+              name: chars.join(""),
+            });
+            chars.length = 0;
+            str = str.slice(1);
+          }
+          break;
+        case State.text:
+          if (isAlpha(char)) {
+            chars.push(char);
+            str = str.slice(1);
+          } else if (char === "<") {
+            currentState = State.tagOpen;
+            tokens.push({
+              type: "text",
+              content: chars.join(""),
+            });
+            chars.length = 0;
+            str = str.slice(1);
+          }
+          break;
+        case State.tagEnd:
+          if (isAlpha(char)) {
+            currentState = State.tagEndName;
+            chars.push(char);
+            str = str.slice(1);
+          }
+          break;
+        case State.tagEndName:
+          if (isAlpha(char)) {
+            chars.push(char);
+            str = str.slice(1);
+          } else if (char === ">") {
+            currentState = State.initial;
+            tokens.push({
+              type: "tagEnd",
+              name: chars.join(""),
+            });
+            chars.length = 0;
+            str = str.slice(1);
+          }
+          break;
+      }
+    }
+
+    return tokens;
+  }
+
+  function parse(str) {
+    const tokens = tokenize(str);
+
+    const root = {
+      type: "Root",
+      children: [],
+    };
+    const elementStack = [root];
+
+    while (tokens.length) {
+      const parent = elementStack[elementStack.length - 1];
+      const t = tokens[0];
+      switch (t.type) {
+        case "tag":
+          const elementNode = {
+            type: "Element",
+            tag: t.name,
+            children: [],
+          };
+          parent.children.push(elementNode);
+          elementStack.push(elementNode);
+          break;
+        case "text":
+          const textNode = {
+            type: "Text",
+            content: t.content,
+          };
+          parent.children.push(textNode);
+          break;
+        case "tagEnd":
+          elementStack.pop();
+          break;
+      }
+      tokens.shift();
+    }
+
+    return root;
+  }
+
+  // 访问节点的⽅式是，从 AST 根节点开始，进⾏深度优先遍历
+  function traverseNode(ast, context) {
+    // 当前节点，ast 本⾝就是 Root 节点
+    const currentNode = ast;
+
+    // context.nodeTransforms 是⼀个数组，其中每⼀个元素都是⼀个函数
+    const transforms = context.nodeTransforms;
+    for (let i = 0; i < transforms.length; i++) {
+      // 将当前节点 currentNode 和 context 都传递给 nodeTransforms 中注册的回调函数
+      transforms[i](currentNode, context);
+    }
+    // 如果有⼦节点，则递归地调⽤ traverseNode 函数进⾏遍历
+    const children = currentNode.children;
+    if (children) {
+      for (let i = 0; i < children.length; i++) {
+        traverseNode(children[i]);
+      }
+    }
+  }
+</script>
+
+<!-- 测试 -->
+<script>
+  const template = `<div><p>Vue</p><p>Template</p></div>`;
+
+  function transformElement(node) {
+    if (node.type === "Element" && node.tag === "p") {
+      node.tag = "h1";
+    }
+  }
+
+  function transformText(node) {
+    if (node.type === "Text") {
+      node.content = node.content.repeat(2);
+    }
+  }
+
+  function transform(ast) {
+    // 在 transform 函数内创建 context 对象
+    const context = {
+      // 注册 nodeTransforms 数组
+      nodeTransforms: [transformElement, transformText],
+    };
+    // 调用 traverseNode 完成转换
+    traverseNode(ast, context);
+    // 打印 AST 信息
+    console.log(dump(ast));
+  }
+
+  const ast = parse(template);
+  transform(ast);
+</script>
